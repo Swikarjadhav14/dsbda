@@ -11,6 +11,12 @@ import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from collections import Counter
+import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class FakeNewsModel:
     def __init__(self):
@@ -18,62 +24,82 @@ class FakeNewsModel:
         try:
             nltk.data.find('tokenizers/punkt')
         except LookupError:
-            print("Downloading punkt tokenizer...")
+            logger.info("Downloading punkt tokenizer...")
             nltk.download('punkt', quiet=True)
             
         try:
             nltk.data.find('corpora/stopwords')
         except LookupError:
-            print("Downloading stopwords...")
+            logger.info("Downloading stopwords...")
             nltk.download('stopwords', quiet=True)
             
         # Load the pre-trained model if available
         try:
-            self.model = joblib.load('fake_news_model.pkl')
-        except:
-            self.model = None
+            if os.path.exists('fake_news_model.pkl'):
+                self.model = joblib.load('fake_news_model.pkl')
+                logger.info("Loaded pre-trained model successfully")
+            else:
+                logger.info("No pre-trained model found. Training new model...")
+                self.train_model()
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            logger.info("Training new model...")
             self.train_model()
 
     def train_model(self):
-        # Load the datasets
-        true_df = pd.read_csv('dataset/True.csv')
-        false_df = pd.read_csv('dataset/Fake.csv')
+        try:
+            # Load the datasets
+            true_df = pd.read_csv('dataset/True.csv')
+            false_df = pd.read_csv('dataset/Fake.csv')
 
-        # Combine both datasets
-        true_df['label'] = 1  # True news label
-        false_df['label'] = 0  # Fake news label
+            # Combine both datasets
+            true_df['label'] = 1  # True news label
+            false_df['label'] = 0  # Fake news label
 
-        data = pd.concat([true_df[['title', 'text', 'label']], false_df[['title', 'text', 'label']]])
+            data = pd.concat([true_df[['title', 'text', 'label']], false_df[['title', 'text', 'label']]])
 
-        # Split the data
-        X = data[['title', 'text']].apply(lambda x: ' '.join(x), axis=1)  # Combine title and text
-        y = data['label']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            # Split the data
+            X = data[['title', 'text']].apply(lambda x: ' '.join(x), axis=1)  # Combine title and text
+            y = data['label']
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Build the model pipeline
-        self.model = make_pipeline(TfidfVectorizer(stop_words='english'), MultinomialNB())
+            # Build the model pipeline
+            self.model = make_pipeline(TfidfVectorizer(stop_words='english'), MultinomialNB())
 
-        # Train the model
-        self.model.fit(X_train, y_train)
+            # Train the model
+            self.model.fit(X_train, y_train)
+            logger.info("Model trained successfully")
 
-        # Save the trained model
-        joblib.dump(self.model, 'fake_news_model.pkl')
+            # Save the trained model
+            joblib.dump(self.model, 'fake_news_model.pkl')
+            logger.info("Model saved successfully")
+        except Exception as e:
+            logger.error(f"Error training model: {str(e)}")
+            raise
 
     def predict(self, data):
-        # Make prediction using the trained model
-        return self.model.predict(data['title'] + ' ' + data['text'])
+        try:
+            # Make prediction using the trained model
+            return self.model.predict(data['title'] + ' ' + data['text'])
+        except Exception as e:
+            logger.error(f"Error in predict: {str(e)}")
+            raise
 
     def predict_with_confidence(self, data):
-        # Get prediction probabilities
-        probs = self.model.predict_proba(data['title'] + ' ' + data['text'])
-        
-        # Get the prediction (0 or 1)
-        prediction = self.model.predict(data['title'] + ' ' + data['text'])
-        
-        # Calculate confidence score (maximum probability)
-        confidence = np.max(probs, axis=1)[0]
-        
-        return prediction[0], confidence
+        try:
+            # Get prediction probabilities
+            probs = self.model.predict_proba(data['title'] + ' ' + data['text'])
+            
+            # Get the prediction (0 or 1)
+            prediction = self.model.predict(data['title'] + ' ' + data['text'])
+            
+            # Calculate confidence score (maximum probability)
+            confidence = np.max(probs, axis=1)[0]
+            
+            return prediction[0], confidence
+        except Exception as e:
+            logger.error(f"Error in predict_with_confidence: {str(e)}")
+            raise
 
     def analyze_text(self, title, text):
         try:
@@ -116,7 +142,7 @@ class FakeNewsModel:
                 'content_consistency': consistency_analysis
             }
         except Exception as e:
-            print(f"Error in analyze_text: {str(e)}")
+            logger.error(f"Error in analyze_text: {str(e)}")
             # Return a basic analysis if there's an error
             return {
                 'basic_stats': {
